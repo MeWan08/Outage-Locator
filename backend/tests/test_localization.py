@@ -123,27 +123,81 @@ def test_branch_point_only_the_dark_branch_is_reported():
     assert flags == []  # R is genuinely live (proven via A1), no false device flag
 
 
-def test_coverage_gap_widens_range_and_lowers_confidence():
+def test_no_device_pole_never_triggers_its_own_frontier():
+    """The bug this locks in: a pole with no telemetry device fitted has
+    zero evidence either way and must default to 'presumed fine', not
+    'presumed dark'. Found via manual end-to-end testing — before this fix,
+    every no-device leaf pole in the whole network (~9% of poles) produced
+    a permanent phantom outage ticket."""
     records = [
         PoleRecord("P1", 12.0001, 77.0000, seq_on_line=1),
-        PoleRecord("P2", 12.0002, 77.0000, seq_on_line=2, parent_pole_id="P1"),  # no device fitted
-        PoleRecord("P3", 12.0003, 77.0000, seq_on_line=3, parent_pole_id="P2"),  # confirmed dark
+        PoleRecord("P2", 12.0002, 77.0000, seq_on_line=2, parent_pole_id="P1"),  # no device, a leaf
     ]
     dt_meta = make_dt_meta("D1", "F1", 12.0000, 77.0000, 40, records)
     snaps = [
         snap("P1", "D1", "F1", 12.0001, 77.0000, LIVE, last_received_at=NOW),
         snap("P2", "D1", "F1", 12.0002, 77.0000, NO_DEVICE, has_device=False),
-        snap("P3", "D1", "F1", 12.0003, 77.0000, CONFIRMED_DARK),
+    ]
+    candidates, flags = run_localization(snaps, {"D1": dt_meta}, {"F1": ["D1"]}, NOW, cfg())
+    assert candidates == []
+    assert flags == []
+
+
+def test_no_device_pole_inside_candidate_range_still_penalises_confidence():
+    """The no-device pole isn't the frontier (it can't be, per the tests
+    above) but it can still land INSIDE the candidate range between the
+    real frontier and the nearest confirmed signal — and that should still
+    cost confidence, because it genuinely does widen how sure we are."""
+    records = [
+        PoleRecord("P1", 12.0001, 77.0000, seq_on_line=1),
+        PoleRecord("P2", 12.0002, 77.0000, seq_on_line=2, parent_pole_id="P1"),  # silent, has device: the frontier
+        PoleRecord("P3", 12.0003, 77.0000, seq_on_line=3, parent_pole_id="P2"),  # no device
+        PoleRecord("P4", 12.0004, 77.0000, seq_on_line=4, parent_pole_id="P3"),  # confirmed dark
+    ]
+    dt_meta = make_dt_meta("D1", "F1", 12.0000, 77.0000, 40, records)
+    snaps = [
+        snap("P1", "D1", "F1", 12.0001, 77.0000, LIVE, last_received_at=NOW),
+        snap("P2", "D1", "F1", 12.0002, 77.0000, SILENT),
+        snap("P3", "D1", "F1", 12.0003, 77.0000, NO_DEVICE, has_device=False),
+        snap("P4", "D1", "F1", 12.0004, 77.0000, CONFIRMED_DARK),
     ]
     candidates, flags = run_localization(snaps, {"D1": dt_meta}, {"F1": ["D1"]}, NOW, cfg())
 
     assert len(candidates) == 1
     inc = candidates[0]
-    assert inc.span_to_pole_id == "P2"                       # frontier: first non-live pole
-    assert inc.candidate_range_pole_ids == ["P2", "P3"]       # widened to the nearest confirmed signal
-    assert inc.poles_affected == 2
+    assert inc.span_to_pole_id == "P2"
+    assert inc.candidate_range_pole_ids == ["P2", "P3", "P4"]
+    assert inc.poles_affected == 3
     assert inc.confidence < 0.90
     assert any("no telemetry device" in r for r in inc.confidence_reasons)
+
+
+def test_no_device_pole_is_transparent_real_frontier_is_the_next_device():
+    """A no-device pole between a live parent and a genuinely silent
+    device-equipped pole must not itself be reported as the boundary — the
+    device that actually stopped reporting is the real frontier, with the
+    no-device pole correctly appearing only as the span's starting point."""
+    records = [
+        PoleRecord("P1", 12.0001, 77.0000, seq_on_line=1),
+        PoleRecord("P2", 12.0002, 77.0000, seq_on_line=2, parent_pole_id="P1"),  # no device, transparent
+        PoleRecord("P3", 12.0003, 77.0000, seq_on_line=3, parent_pole_id="P2"),  # has a device, silent
+        PoleRecord("P4", 12.0004, 77.0000, seq_on_line=4, parent_pole_id="P3"),  # confirmed dark
+    ]
+    dt_meta = make_dt_meta("D1", "F1", 12.0000, 77.0000, 40, records)
+    snaps = [
+        snap("P1", "D1", "F1", 12.0001, 77.0000, LIVE, last_received_at=NOW),
+        snap("P2", "D1", "F1", 12.0002, 77.0000, NO_DEVICE, has_device=False),
+        snap("P3", "D1", "F1", 12.0003, 77.0000, SILENT),
+        snap("P4", "D1", "F1", 12.0004, 77.0000, CONFIRMED_DARK),
+    ]
+    candidates, flags = run_localization(snaps, {"D1": dt_meta}, {"F1": ["D1"]}, NOW, cfg())
+
+    assert len(candidates) == 1
+    inc = candidates[0]
+    assert inc.span_from_pole_id == "P2"     # P2 is transparent but still the real topological parent
+    assert inc.span_to_pole_id == "P3"       # P3 is the real frontier — it's the pole with actual evidence
+    assert inc.candidate_range_pole_ids == ["P3", "P4"]  # extends to the nearest confirmed signal
+    assert inc.poles_affected == 2            # P3, P4 (P2 was never dark, so it's not "affected")
 
 
 def test_inferred_topology_is_less_confident_than_known_for_the_same_pattern():

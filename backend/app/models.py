@@ -33,10 +33,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.db import Base
-
-
-def utcnow():
-    return dt.datetime.now(dt.timezone.utc)
+from app.timeutil import utcnow
 
 
 class Substation(Base):
@@ -163,6 +160,7 @@ class Incident(Base):
     """A located fault, i.e. what the brief calls a 'ticket'."""
     __tablename__ = "incidents"
     id = Column(String, primary_key=True)  # e.g. INC-000123
+    identity_key = Column(String, nullable=False, index=True)  # e.g. span:D-0112:P-024432
     type = Column(String, nullable=False)  # 'span' | 'dt' | 'feeder' | 'sensor_fault'
     dt_id = Column(String, nullable=True, index=True)
     feeder_id = Column(String, nullable=True, index=True)
@@ -170,6 +168,7 @@ class Incident(Base):
     span_from_pole_id = Column(String, nullable=True)
     span_to_pole_id = Column(String, nullable=True)
     candidate_range_pole_ids = Column(JSON, nullable=True)  # widened boundary if coverage gap
+    affected_pole_ids = Column(JSON, nullable=False, default=list)
 
     lat = Column(Float, nullable=True)
     lon = Column(Float, nullable=True)

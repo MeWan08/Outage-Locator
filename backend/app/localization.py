@@ -59,6 +59,17 @@ KNOWN FAILURE CASES (stated plainly, not hidden):
   close but electrically distinct lines (e.g. either side of a road). We
   can't detect this from coordinates alone; it's why inferred spans always
   carry a confidence penalty rather than being reported as certain.
+- A pole with no telemetry device fitted (~9% of poles) is never treated as
+  evidence of anything on its own — it inherits its parent's status by
+  default (see `walk()` below) rather than defaulting to "presumed dark",
+  because the alternative floods the system with a permanent phantom
+  incident for every no-device leaf pole in the network. The corollary,
+  accepted rather than engineered around: if literally every pole under a
+  DT lacked a device, the DT would always look dark (there would be no
+  possible source of live evidence at all). At the ~9% no-device rate this
+  is astronomically unlikely for any real DT and doesn't occur in the
+  seeded network, but it's a real edge case at the DT/feeder rollup level
+  that a from-scratch subdivision with very sparse instrumentation could hit.
 """
 import datetime as dt
 from collections import deque
@@ -111,6 +122,7 @@ class CandidateIncident:
     span_from_pole_id: Optional[str]
     span_to_pole_id: Optional[str]
     candidate_range_pole_ids: list = field(default_factory=list)
+    affected_pole_ids: list = field(default_factory=list)
     lat: Optional[float] = None
     lon: Optional[float] = None
     pincode: Optional[str] = None
@@ -206,17 +218,32 @@ def run_localization(poles: list[PoleSnapshot], dt_meta_map: dict, feeder_dt_ids
             def walk(pid, parent_effective_live, _dt_id=dt_id, _meta=meta,
                      _children_index=children_index, _topo_nodes=topo_nodes, _any_live=any_live):
                 raw = raw_status_by_pole.get(pid, SILENT)
-                eff_live = (raw == LIVE) or _any_live.get(pid, False)
+                proven_live_via_descendant = _any_live.get(pid, False)
 
-                if eff_live and raw != LIVE:
-                    health_flags.append(DeviceHealthFlag(
-                        pole_id=pid,
-                        dt_id=_dt_id,
-                        note=(f"Reports '{raw}', but a pole downstream of it is live — "
-                              "read as a device/sensor issue, not a line fault."),
-                    ))
+                if raw == NO_DEVICE:
+                    # No device means no evidence, ever — not "assume dark".
+                    # A pole with nothing fitted just isn't informative on
+                    # its own; it inherits whatever its parent's status is
+                    # (optimistic default: most of the network is fine most
+                    # of the time) unless something further downstream
+                    # proves it must be dark. It can never itself be the
+                    # start of an incident — only a pole that actually HAD a
+                    # device and stopped reporting (silent/confirmed_dark)
+                    # is real evidence of a problem.
+                    eff_live = parent_effective_live or proven_live_via_descendant
+                    can_trigger_frontier = False
+                else:
+                    eff_live = (raw == LIVE) or proven_live_via_descendant
+                    can_trigger_frontier = True
+                    if eff_live and raw != LIVE:
+                        health_flags.append(DeviceHealthFlag(
+                            pole_id=pid,
+                            dt_id=_dt_id,
+                            note=(f"Reports '{raw}', but a pole downstream of it is live — "
+                                  "read as a device/sensor issue, not a line fault."),
+                        ))
 
-                if not eff_live and parent_effective_live:
+                if not eff_live and parent_effective_live and can_trigger_frontier:
                     cand = _build_span_incident(pid, _dt_id, _meta, _children_index, _topo_nodes,
                                                  pole_lookup, raw_status_by_pole, now, cfg)
                     if cand:
@@ -390,6 +417,7 @@ def _build_span_incident(pid, dt_id, meta: DtMeta, children_index, topo_nodes, p
         span_from_pole_id=parent_id,
         span_to_pole_id=pid,
         candidate_range_pole_ids=path,
+        affected_pole_ids=affected,
         lat=lat, lon=lon, pincode=pincode,
         poles_affected=poles_affected,
         households_affected_estimate=households,
@@ -423,6 +451,7 @@ def _build_dt_incident(dt_id, meta: DtMeta, dt_poles, raw_status_by_pole, cfg) -
         feeder_id=meta.feeder_id,
         span_from_pole_id=None,
         span_to_pole_id=None,
+        affected_pole_ids=[p.pole_id for p in dt_poles],
         lat=meta.lat, lon=meta.lon, pincode=pincode,
         poles_affected=len(dt_poles),
         households_affected_estimate=meta.households_served or 0,
@@ -461,6 +490,7 @@ def _build_feeder_incident(feeder_id, dt_ids, dt_meta_map, poles_by_dt, raw_stat
         feeder_id=feeder_id,
         span_from_pole_id=None,
         span_to_pole_id=None,
+        affected_pole_ids=[p.pole_id for p in all_poles],
         lat=lat, lon=lon, pincode=pincode,
         poles_affected=len(all_poles),
         households_affected_estimate=households,

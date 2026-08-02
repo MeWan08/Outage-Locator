@@ -141,5 +141,21 @@ def close(db, inc: Incident) -> bool:
     return True
 
 
+def supersede(db, old: Incident, new: "Incident"):
+    """A fault's granularity can coarsen as ambiguous silent poles cross
+    into confirmed-dark — several span tickets on one DT can end up all
+    genuinely belonging to one DT-level fault once enough evidence is in.
+    Rather than leave the narrower ticket open and orphaned (duplicate
+    alerts for the same root cause — exactly what 01-problem-context.md
+    calls worse than no system), it's closed here with a pointer to the
+    ticket that now covers it."""
+    now = timeutil.utcnow()
+    old.verified_at = old.verified_at or now
+    old.status = "closed"
+    old.closed_at = now
+    _log(db, old, "system", "superseded",
+         f"Escalated into {new.id} ({new.type}-level) as more evidence arrived; closing this narrower ticket.")
+
+
 def _log(db, inc: Incident, actor: str, action: str, note: str | None):
     db.add(IncidentEvent(incident_id=inc.id, actor=actor, action=action, note=note))

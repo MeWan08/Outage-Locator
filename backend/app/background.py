@@ -143,6 +143,22 @@ def detection_tick(db, now, cfg) -> list[str]:
                 tickets.promote_from_suppressed(db, inc, sched)
                 newly_visible.append(inc.id)
 
+    db.flush()  # autoflush is off; the escalation check below needs to see this tick's writes
+    still_open = db.execute(
+        select(Incident).where(Incident.status.notin_(["verified", "closed"]))
+    ).scalars().all()
+    coarse_open = [i for i in still_open if i.type in ("dt", "feeder") and i.identity_key in seen_keys]
+    for inc in still_open:
+        if inc.identity_key in seen_keys or inc.type not in ("span", "dt"):
+            continue
+        affected = set(inc.affected_pole_ids or [])
+        if not affected:
+            continue
+        for coarse in coarse_open:
+            if coarse.id != inc.id and affected <= set(coarse.affected_pole_ids or []):
+                tickets.supersede(db, inc, coarse)
+                break
+
     pole_has_device = {s.pole_id: s.has_device for s in snapshots}
     live_since_lookup = {pid: ps.became_live_at for pid, ps in pole_states.items() if ps.energized is True}
 

@@ -108,21 +108,21 @@ def mark_resolved(db, inc: Incident, currently_dark_pole_ids: set[str]) -> tuple
     return len(still_dark), len(affected)
 
 
-def check_restoration(db, inc: Incident, pole_live_since_fn, now, stability_seconds: int) -> bool:
-    """Telemetry-driven only, and requires every affected pole to have been
-    continuously live for at least `stability_seconds` — not just live at
-    the instant we happen to check — so a pole that flickers back for a
-    moment doesn't verify (and then potentially un-verify) a ticket.
+def check_restoration(db, inc: Incident, pole_restored_fn, now) -> bool:
+    """`pole_restored_fn(pole_id) -> bool` encapsulates everything about
+    what 'restored' means for one pole — including that a pole with no
+    device fitted can never prove it either way and must count as
+    vacuously restored (see app/background.py). Without that, any incident
+    whose affected subtree includes even one no-device pole — which is most
+    of them, at a ~9% no-device rate — could never auto-verify at all.
     Returns True if this call just verified the incident."""
     if inc.status in ("verified", "closed", "suppressed_scheduled"):
         return False
     affected = inc.affected_pole_ids or []
     if not affected:
         return False
-    for pid in affected:
-        live_since = pole_live_since_fn(pid)
-        if live_since is None or (now - live_since).total_seconds() < stability_seconds:
-            return False
+    if not all(pole_restored_fn(pid) for pid in affected):
+        return False
     inc.verified_at = now
     was_resolved_by_human = inc.status == "resolved"
     inc.status = "verified"

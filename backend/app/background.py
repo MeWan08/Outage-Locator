@@ -143,11 +143,21 @@ def detection_tick(db, now, cfg) -> list[str]:
                 tickets.promote_from_suppressed(db, inc, sched)
                 newly_visible.append(inc.id)
 
+    pole_has_device = {s.pole_id: s.has_device for s in snapshots}
     live_since_lookup = {pid: ps.became_live_at for pid, ps in pole_states.items() if ps.energized is True}
+
+    def pole_restored(pid: str) -> bool:
+        if not pole_has_device.get(pid, False):
+            return True  # no device was ever fitted -- can never prove it, so don't require it
+        live_since = live_since_lookup.get(pid)
+        if live_since is None:
+            return False
+        return (now - live_since).total_seconds() >= cfg.RESTORATION_STABILITY_SECONDS
+
     for inc in open_incidents:
         if inc.status == "suppressed_scheduled":
             continue
-        tickets.check_restoration(db, inc, lambda pid: live_since_lookup.get(pid), now, cfg.RESTORATION_STABILITY_SECONDS)
+        tickets.check_restoration(db, inc, pole_restored, now)
 
     return newly_visible
 

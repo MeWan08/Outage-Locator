@@ -1,0 +1,16 @@
+services:
+  outage-locator:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Optional: set to enable the AI dispatch-note feature; the system
+      # works fully without it (falls back to a templated summary).
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SEED_POLE_COUNT=${SEED_POLE_COUNT:-3600}
+    volumes:
+      - outage-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  outage-data:

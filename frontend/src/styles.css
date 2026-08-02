@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+}
+
+.font-data {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-feature-settings: "tnum";
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #14171a;
+}
+::-webkit-scrollbar-thumb {
+  background: #2b3138;
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a424b;
+}
+
+@keyframes fault-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(232, 163, 61, 0.55); }
+  70% { box-shadow: 0 0 0 10px rgba(232, 163, 61, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(232, 163, 61, 0); }
+}
+.pulse-copper {
+  animation: fault-pulse 2s ease-out infinite;
+}
+
+/* Leaflet dark-console theming */
+.leaflet-container {
+  background: #14171a;
+  font-family: "IBM Plex Sans", sans-serif;
+}
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+  background: #1e2226;
+  color: #e5e9ee;
+  border: 1px solid #3a424b;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 6px;
+}
+.leaflet-control-zoom a {
+  background: #1e2226 !important;
+  color: #cbd3db !important;
+  border-color: #3a424b !important;
+}
+.leaflet-control-attribution {
+  background: rgba(20, 23, 26, 0.7) !important;
+  color: #6b7684 !important;
+}
+.leaflet-control-attribution a {
+  color: #9aa4af !important;
+}

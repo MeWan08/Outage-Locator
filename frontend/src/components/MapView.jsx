@@ -112,26 +112,22 @@ function IncidentPulse({ center, onClick, inc }) {
 }
 
 /* ── Transformer marker ── */
-function TransformerMarker({ center, dtId, poleCount, feederColor: fColor, allLive }) {
-  const statusColor = allLive ? "#16a37a" : "#dc3545";
+function TransformerMarker({ center, dtId, poleCount }) {
   return (
     <CircleMarker
       center={center}
       radius={7}
       pathOptions={{
-        color: fColor,
-        fillColor: statusColor,
-        fillOpacity: 0.7,
-        weight: 2.5,
+        color: "#ffffff",
+        fillColor: DT_COLOR,
+        fillOpacity: 0.9,
+        weight: 1.5,
       }}
     >
       <Tooltip direction="top" opacity={0.95}>
         <div className="font-data text-xs space-y-0.5">
           <div className="font-semibold">{dtId}</div>
           <div>{poleCount} poles</div>
-          <div style={{ color: allLive ? "#16a37a" : "#dc3545" }}>
-            {allLive ? "All live ✓" : "Has dark poles ✕"}
-          </div>
         </div>
       </Tooltip>
     </CircleMarker>
@@ -290,6 +286,17 @@ function LayerControl({ layers, onToggle, feeders, selectedFeeder, onFeederChang
       ))}
 
       <div className="border-t border-panel-700 pt-2 mt-2">
+        <label className="flex items-center gap-2 cursor-pointer text-slate-600 hover:text-slate-800 transition-colors mb-2">
+          <input
+            type="checkbox"
+            checked={layers.offlineOnly}
+            onChange={() => onToggle("offlineOnly")}
+            className="accent-signal-dark w-3.5 h-3.5"
+          />
+          <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: POLE_COLOR.dark }} />
+          Offline Poles Only
+        </label>
+
         <div className="text-[10px] tracking-widest text-slate-400 font-medium mb-1">FEEDER FILTER</div>
         <select
           value={selectedFeeder}
@@ -315,8 +322,8 @@ function VisiblePoles({ poles }) {
     function updateVisible() {
       const bounds = map.getBounds();
       const zoom = map.getZoom();
-      // At low zoom levels, skip pole rendering entirely for speed
-      if (zoom < 11) {
+      // Only render individual poles when zoomed in close (>= 14) for performance & visual clarity
+      if (zoom < 14) {
         setVisiblePoles([]);
         return;
       }
@@ -336,7 +343,7 @@ function VisiblePoles({ poles }) {
     <CircleMarker
       key={p.pole_id}
       center={[p.lat, p.lon]}
-      radius={p.has_device ? 4 : 2.5}
+      radius={p.has_device ? 5 : 3}
       pathOptions={{
         color: poleColor(p),
         fillColor: poleColor(p),
@@ -406,6 +413,7 @@ export default function MapView({ incidents, onSelect }) {
     transformers: true,
     topologyLines: true,
     incidents: true,
+    offlineOnly: false,
   });
   const [selectedFeeder, setSelectedFeeder] = useState("");
   const [selectedIncident, setSelectedIncident] = useState(null);
@@ -436,9 +444,15 @@ export default function MapView({ incidents, onSelect }) {
   }, [poles]);
 
   const filteredPoles = useMemo(() => {
-    if (!selectedFeeder) return poles;
-    return poles.filter((p) => p.feeder_id === selectedFeeder);
-  }, [poles, selectedFeeder]);
+    let result = poles;
+    if (selectedFeeder) {
+      result = result.filter((p) => p.feeder_id === selectedFeeder);
+    }
+    if (layers.offlineOnly) {
+      result = result.filter((p) => p.energized === false || !p.has_device);
+    }
+    return result;
+  }, [poles, selectedFeeder, layers.offlineOnly]);
 
   /* Compute transformer centroids from pole groups */
   const dtMarkers = useMemo(() => {
@@ -452,13 +466,10 @@ export default function MapView({ incidents, onSelect }) {
       const lons = data.poles.map((p) => p.lon);
       const centerLat = lats.reduce((a, b) => a + b, 0) / lats.length;
       const centerLon = lons.reduce((a, b) => a + b, 0) / lons.length;
-      const allLive = data.poles.every((p) => !p.has_device || p.energized !== false);
       return {
         dtId,
         center: [centerLat, centerLon],
         poleCount: data.poles.length,
-        feederId: data.feeder_id,
-        allLive,
       };
     });
   }, [filteredPoles]);
@@ -563,8 +574,6 @@ export default function MapView({ incidents, onSelect }) {
             center={dt.center}
             dtId={dt.dtId}
             poleCount={dt.poleCount}
-            feederColor={feederColor(dt.feederId)}
-            allLive={dt.allLive}
           />
         ))}
 

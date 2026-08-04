@@ -2,7 +2,7 @@ services:
   outage-locator:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       # Optional: set to enable AI dispatch notes (Groq or Anthropic free tier)
       - GROQ_API_KEY=${GROQ_API_KEY:-}

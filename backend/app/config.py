@@ -67,8 +67,9 @@ class Settings:
     INGEST_BATCH_MAX_WAIT_SECONDS: float = _float("INGEST_BATCH_MAX_WAIT_SECONDS", 0.25)
 
     # --- AI briefing feature ---
+    GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
     ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")
-    AI_BRIEFING_MODEL: str = os.environ.get("AI_BRIEFING_MODEL", "claude-sonnet-5")
+    AI_BRIEFING_MODEL: str = os.environ.get("AI_BRIEFING_MODEL", "")
     AI_BRIEFING_ENABLED: bool = _bool("AI_BRIEFING_ENABLED", True)
     AI_BRIEFING_TIMEOUT_SECONDS: float = _float("AI_BRIEFING_TIMEOUT_SECONDS", 8.0)
 

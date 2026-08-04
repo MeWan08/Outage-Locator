@@ -201,11 +201,24 @@ async def _generate_and_store_briefing(incident_id: str):
 
 
 async def run_forever():
+    from app import stats_history
     while True:
         try:
             now = timeutil.utcnow()
             with session_scope() as db:
                 newly_visible = detection_tick(db, now, settings)
+                # Record stats snapshot for trend charts
+                from sqlalchemy import func, select as sa_select
+                open_count = db.execute(
+                    sa_select(func.count(Incident.id)).where(
+                        Incident.status.notin_(["verified", "closed", "suppressed_scheduled"])
+                    )
+                ).scalar_one()
+                dark_count = db.execute(
+                    sa_select(func.count(PoleState.pole_id)).where(PoleState.energized.is_(False))
+                ).scalar_one()
+                total_count = db.execute(sa_select(func.count(Pole.pole_id))).scalar_one()
+                stats_history.record(open_count, dark_count, total_count)
             for inc_id in newly_visible:
                 asyncio.create_task(_generate_and_store_briefing(inc_id))
         except Exception as exc:  # noqa: BLE001 — one bad tick must never kill the loop

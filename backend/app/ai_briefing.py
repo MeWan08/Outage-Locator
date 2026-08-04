@@ -47,51 +47,88 @@ async def generate_briefing(incident) -> tuple[str, str]:
     """Returns (text, source) where source is 'model' or 'template-fallback'.
     Never raises — any failure degrades to the template."""
     fallback = template_briefing(incident)
-    if not settings.AI_BRIEFING_ENABLED or not settings.ANTHROPIC_API_KEY:
+    if not settings.AI_BRIEFING_ENABLED:
         return fallback, "template-fallback"
 
+    # Build a structured context block for the LLM
+    conf_reasons = "\n".join(f"  - {r}" for r in (incident.confidence_reasons or []))
+
     prompt = (
-        "You write short dispatch notes for electricity-board control room operators. "
-        "Given this structured fault ticket, write 2-3 plain-English sentences a "
-        "dispatcher can read aloud to a lineman crew. State the type of fault, "
-        "roughly where it is, how many households are affected, and be explicit "
-        "about the confidence level and why it isn't 100% if it isn't. No preamble, "
-        "no markdown, just the sentences.\n\n"
-        f"type: {incident.type}\n"
-        f"transformer: {incident.dt_id}\n"
-        f"feeder: {incident.feeder_id}\n"
-        f"span: {incident.span_from_pole_id} -> {incident.span_to_pole_id}\n"
-        f"pincode: {incident.pincode}\n"
-        f"poles_affected: {incident.poles_affected}\n"
-        f"households_affected_estimate: {incident.households_affected_estimate}\n"
-        f"confidence: {incident.confidence:.2f} ({incident.confidence_label})\n"
-        f"confidence_reasons: {'; '.join(incident.confidence_reasons or [])}\n"
-        f"topology_source: {incident.topology_source}\n"
+        "You are the AI assistant for a power utility control room. Your job is to "
+        "write a clear, actionable DISPATCH NOTE that a control-room operator can "
+        "read aloud over the radio to a lineman crew heading to the site.\n\n"
+        "RULES:\n"
+        "- Write 3-4 concise sentences maximum.\n"
+        "- Start with WHAT happened (type of fault) and WHERE (pole IDs, area).\n"
+        "- State HOW MANY households are impacted — this determines crew urgency.\n"
+        "- Be explicit about confidence: if it's not 'high', explain WHY in plain "
+        "  language (e.g. 'topology is estimated, not surveyed' or 'some poles in "
+        "  the area have no sensors').\n"
+        "- End with a practical suggestion for the crew (e.g. 'start inspection "
+        "  from pole X heading toward Y').\n"
+        "- No markdown, no bullet points, no preamble — just the sentences.\n"
+        "- Use natural, professional English a field technician would understand.\n\n"
+        "INCIDENT DATA:\n"
+        f"  Fault type: {incident.type}\n"
+        f"  Transformer: {incident.dt_id}\n"
+        f"  Feeder: {incident.feeder_id}\n"
+        f"  Span: {incident.span_from_pole_id} → {incident.span_to_pole_id}\n"
+        f"  PIN code area: {incident.pincode or 'unknown'}\n"
+        f"  Poles affected: {incident.poles_affected}\n"
+        f"  Households impacted (est.): ~{incident.households_affected_estimate}\n"
+        f"  Confidence: {incident.confidence:.0%} ({incident.confidence_label})\n"
+        f"  Topology basis: {incident.topology_source}\n"
+        f"  Confidence factors:\n{conf_reasons or '    (none)'}\n"
     )
 
     try:
         async with httpx.AsyncClient(timeout=settings.AI_BRIEFING_TIMEOUT_SECONDS) as client:
-            resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": settings.ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": settings.AI_BRIEFING_MODEL,
-                    "max_tokens": 200,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
-        if resp.status_code != 200:
-            return fallback, "template-fallback"
-        data = resp.json()
-        text = "".join(
-            block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"
-        ).strip()
-        if not text:
-            return fallback, "template-fallback"
-        return text, "model"
+            # 1. Groq (free tier, ultra-fast inference)
+            if settings.GROQ_API_KEY:
+                model = settings.AI_BRIEFING_MODEL or "llama-3.3-70b-versatile"
+                resp = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.GROQ_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 250,
+                        "temperature": 0.2,
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if text:
+                        return text, "model"
+
+            # 2. Anthropic (paid)
+            if settings.ANTHROPIC_API_KEY:
+                model = settings.AI_BRIEFING_MODEL or "claude-sonnet-5"
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": settings.ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": 250,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = "".join(
+                        block.get("text", "") for block in data.get("content", []) if block.get("type") == "text"
+                    ).strip()
+                    if text:
+                        return text, "model"
+
+        return fallback, "template-fallback"
     except Exception:  # noqa: BLE001 — briefing is best-effort, never fatal
         return fallback, "template-fallback"

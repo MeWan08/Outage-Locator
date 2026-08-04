@@ -78,7 +78,9 @@ it has been exercised, not locked in.
 
 **What I'd do differently with more time**: build the DB-backed integration tests
 that were manually run instead of just running them once; add the historical
-outage-correlation topology refinement noted as future work in DECISIONS.md; replace
-the single-connection load test with a real concurrent-connection generator to get
-an honest sustained-throughput number instead of the honestly-caveated one currently
-in ARCHITECTURE.md.
+outage-correlation topology refinement noted as future work in DECISIONS.md; extend
+the concurrent load test (`scripts/loadtest.py`, now covers both single-connection
+and 40-way-concurrent scenarios — see ARCHITECTURE.md) to a genuinely distributed
+load generator rather than one process's worker pool, to see whether the numbers
+hold up beyond what a single machine's event loop can drive.
+

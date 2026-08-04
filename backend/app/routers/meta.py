@@ -58,3 +58,10 @@ def stats(db: Session = Depends(get_db)):
         "poles_reporting_dark": dark_now,
         "dt_count": len(background.all_dt_ids()),
     }
+
+
+@router.get("/stats/history")
+def stats_history(limit: int = 60):
+    from app import stats_history as sh
+    return sh.get_history(limit)
+

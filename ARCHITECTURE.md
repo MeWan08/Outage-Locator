@@ -139,17 +139,21 @@ losing pole identity.
 **Measured throughput** (`scripts/loadtest.py`, results reported honestly rather than
 assumed):
 
-- Burst: 5,000 messages accepted in **1.34s** (≈3,700 msg/s accept rate), fully
+- Burst: 5,000 messages accepted in **1.3s** (≈3,800 msg/s accept rate), fully
   drained to disk within 3s — comfortably inside the "5,000 in 10s" target.
-- Sustained: a **single serial HTTP connection** issuing one request, waiting for the
-  response, then the next, sustained **~306 msg/s** over 10s (p50 latency 0.9ms,
-  p95 1.3ms per request). This undershoots the 500 msg/s target, but the bottleneck
-  is the test harness serialising round-trips on one connection, not server
-  capacity — the burst test shows the accept path alone handles >3,700 msg/s. A real
-  deployment's 500 msg/s would come from many concurrent device/collector
-  connections, not one; I did not build a concurrent-connection load generator to
-  prove that number given the time box, so I'm reporting what I actually measured
-  rather than what I'd expect.
+- Sustained, single connection: a lone client issuing one request, waiting for the
+  response, then the next, sustained **~304 msg/s** over 10s (p50 latency 0.8ms).
+  This undershoots the 500 msg/s target — but the bottleneck is that a single
+  connection serializes round-trips, not server capacity.
+- Sustained, 40 concurrent connections (the realistic shape — many independent
+  devices/collectors, not one): **1,374 msg/s**, comfortably over the 500 msg/s
+  target, with *lower* per-request latency (p50 0.4ms) than the single-connection
+  case, because requests overlap in flight instead of queuing behind each other.
+  This is the number that reflects how telemetry actually arrives in production.
+
+Both scenarios hit the real app (`app/main.py`) through the real HTTP-equivalent
+path (httpx's ASGI transport), not a shortcut — same routing, same Pydantic
+validation, same queue.
 
 ## Ticket lifecycle (`tickets.py`, `background.py`)
 

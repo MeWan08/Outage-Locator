@@ -75,6 +75,43 @@ async def sustained_test(client, pole_device_pairs, rate_per_sec: int, duration_
     return sent, latencies
 
 
+async def concurrent_sustained_test(pole_device_pairs, n_workers: int, duration_s: int):
+    """The realistic scenario: many independent connections (devices or
+    collector processes) sending concurrently, not one connection sending
+    serially. Uses httpx's ASGI transport to hit the real app in-process
+    with genuine concurrency (real asyncio.gather, not a thread pool),
+    exercising the actual routing/validation/queue path."""
+    import random as _random
+
+    counters = {}
+    latencies = []
+    lock = asyncio.Lock()
+
+    async def worker(client, worker_id, end_time):
+        nonlocal latencies
+        local_latencies = []
+        seq = 100000 * worker_id
+        sent = 0
+        while time.perf_counter() < end_time:
+            pid, did = pole_device_pairs[_random.randrange(len(pole_device_pairs))]
+            t0 = time.perf_counter()
+            await client.post("/api/telemetry", json=make_event(pid, did, seq))
+            local_latencies.append(time.perf_counter() - t0)
+            seq += 1
+            sent += 1
+        async with lock:
+            latencies.extend(local_latencies)
+        counters[worker_id] = sent
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        end_time = time.perf_counter() + duration_s
+        await asyncio.gather(*[worker(client, i, end_time) for i in range(n_workers)])
+
+    total_sent = sum(counters.values())
+    return total_sent, latencies
+
+
 async def main():
     with TestClient(app) as client:
         with session_scope() as db:
@@ -91,12 +128,19 @@ async def main():
         from app import ingestion
         print(f"queue depth 3s after burst: {ingestion.get_queue().qsize()} (0 = fully drained)")
 
-        print("\n=== SUSTAINED TEST: target 500 msg/s for 10s (single-connection HTTP, TestClient in-process) ===")
+        print("\n=== SUSTAINED TEST (serial): target 500 msg/s for 10s, one connection ===")
         sent, latencies = await sustained_test(client, pairs, rate_per_sec=500, duration_s=10)
         p50 = statistics.median(latencies) * 1000
         p95 = sorted(latencies)[int(len(latencies) * 0.95)] * 1000
         print(f"sent {sent} messages in 10s -> {sent/10:.0f} msg/s actual")
         print(f"per-request latency: p50={p50:.1f}ms p95={p95:.1f}ms")
+
+        print("\n=== SUSTAINED TEST (concurrent): 40 independent connections for 10s ===")
+        c_sent, c_latencies = await concurrent_sustained_test(pairs, n_workers=40, duration_s=10)
+        c_p50 = statistics.median(c_latencies) * 1000
+        c_p95 = sorted(c_latencies)[int(len(c_latencies) * 0.95)] * 1000
+        print(f"sent {c_sent} messages in 10s across 40 workers -> {c_sent/10:.0f} msg/s actual")
+        print(f"per-request latency: p50={c_p50:.1f}ms p95={c_p95:.1f}ms")
 
 
 if __name__ == "__main__":

@@ -4,10 +4,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Optional: set to enable the AI dispatch-note feature; the system
-      # works fully without it (falls back to a templated summary).
+      # Optional: set to enable AI dispatch notes (Groq or Anthropic free tier)
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SEED_POLE_COUNT=${SEED_POLE_COUNT:-3600}
+      # Accurate Production Timers (Waits 30s to correctly group all faults)
+      - HEARTBEAT_INTERVAL_SECONDS=15
+      - MISSED_HEARTBEATS_FOR_SILENCE=1
+      - DEBOUNCE_SECONDS=30
+      - RESTORATION_STABILITY_SECONDS=30
+      - DETECTION_LOOP_INTERVAL_SECONDS=2.0
     volumes:
       - outage-data:/app/data
     restart: unless-stopped

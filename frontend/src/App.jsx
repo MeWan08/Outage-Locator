@@ -135,14 +135,16 @@ export default function App() {
       <div className="h-screen flex flex-col bg-panel-950">
         {/* ── Header ── */}
         <header className="flex items-center gap-6 px-5 py-3 border-b border-panel-700 bg-white shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-signal-copper/20 to-signal-copper/5 border border-signal-copper/30 flex items-center justify-center text-sm">
-              ⚡
-            </div>
+          <div className="flex items-center gap-2 pr-6 border-r border-panel-700">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-signal-copper">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
             <div>
-              <div className="font-data text-sm tracking-widest text-signal-copper font-semibold">KSPDB</div>
-              <div className="text-[10px] tracking-widest text-slate-400 -mt-0.5">
-                OUTAGE LOCATOR · CONTROL ROOM
+              <div className="font-bold text-slate-700 text-[13px] tracking-wide">LumenGrid</div>
+              <div className="text-[9px] font-medium tracking-[0.2em] text-slate-400 uppercase">
+                AI-Powered <span className="mx-0.5 opacity-50">·</span> Intelligence Console
               </div>
             </div>
           </div>

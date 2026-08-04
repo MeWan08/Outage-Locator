@@ -39,6 +39,7 @@ BUGGY_FIRMWARE_VERSIONS = {"1.2.0", "1.2.1"}
 RANDOM_SILENT_PROBABILITY = 0.30
 
 _faulted_pole_ids: set[str] = set()
+_active_faults: list[set[str]] = []
 _device_seq: dict[str, int] = {}
 _fw_cache: dict[str, str] = {}
 _next_due: dict[str, dt.datetime] = {}
@@ -96,6 +97,7 @@ async def inject_fault(kind: str, *, dt_id=None, feeder_id=None, pole_id=None, s
             if pole is None or pole.device_id is None:
                 raise ValueError("pole not found or has no device fitted")
         _faulted_pole_ids.add(pole_id)
+        _active_faults.append({pole_id})
         # No telemetry sent at all: nothing about the pole's power state
         # changes, it just stops reporting — exactly what an unrelated dead
         # sensor looks like. This is what test_sensor_only_fault exercises.
@@ -149,6 +151,8 @@ async def inject_fault(kind: str, *, dt_id=None, feeder_id=None, pole_id=None, s
     for ev in events:
         await ingestion.enqueue(ev)
 
+    _active_faults.append(set(affected))
+
     summary["affected_pole_ids"] = affected
     summary["explicit_signal_count"] = len(events)
     summary["silent_count"] = len(affected) - len(events)
@@ -164,6 +168,14 @@ async def repair(*, incident_id: str | None = None, pole_ids: list[str] | None =
             if inc is None:
                 raise ValueError(f"unknown incident {incident_id}")
             targets.extend(inc.affected_pole_ids or [])
+        
+        # If any requested pole intersects with an injected fault, repair the entire fault
+        for pid in list(targets):
+            for fault_set in list(_active_faults):
+                if pid in fault_set:
+                    targets.extend(list(fault_set))
+                    _active_faults.remove(fault_set)
+                    
         targets = list(dict.fromkeys(targets))
 
         events = []

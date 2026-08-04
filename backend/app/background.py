@@ -147,7 +147,7 @@ def detection_tick(db, now, cfg) -> list[str]:
     still_open = db.execute(
         select(Incident).where(Incident.status.notin_(["verified", "closed"]))
     ).scalars().all()
-    coarse_open = [i for i in still_open if i.type in ("dt", "feeder") and i.identity_key in seen_keys]
+    coarse_open = [i for i in still_open if i.type in ("dt", "feeder", "span") and i.identity_key in seen_keys]
     for inc in still_open:
         if inc.identity_key in seen_keys or inc.type not in ("span", "dt"):
             continue

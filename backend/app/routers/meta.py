@@ -25,6 +25,8 @@ def list_poles(dt_id: str | None = None, db: Session = Depends(get_db)):
             "pole_id": pole.pole_id, "lat": pole.lat, "lon": pole.lon, "dt_id": pole.dt_id,
             "feeder_id": pole.feeder_id, "has_device": pole.device_id is not None,
             "topology_source": pole.topology_source,
+            "resolved_parent_pole_id": pole.resolved_parent_pole_id,
+            "seq_on_line": pole.seq_on_line,
             "energized": ps.energized if ps else None,
             "last_received_at": ps.last_received_at if ps else None,
         }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip, Polyline, useMap } from "react-leaflet";
 import { api } from "../api.js";
 import ConfidenceMeter from "./ConfidenceMeter.jsx";
@@ -306,6 +306,98 @@ function LayerControl({ layers, onToggle, feeders, selectedFeeder, onFeederChang
   );
 }
 
+/* ── Visible poles: only render poles within the current map viewport ── */
+function VisiblePoles({ poles }) {
+  const map = useMap();
+  const [visiblePoles, setVisiblePoles] = useState([]);
+
+  useEffect(() => {
+    function updateVisible() {
+      const bounds = map.getBounds();
+      const zoom = map.getZoom();
+      // At low zoom levels, skip pole rendering entirely for speed
+      if (zoom < 11) {
+        setVisiblePoles([]);
+        return;
+      }
+      const visible = poles.filter((p) => bounds.contains([p.lat, p.lon]));
+      setVisiblePoles(visible);
+    }
+    updateVisible();
+    map.on("moveend", updateVisible);
+    map.on("zoomend", updateVisible);
+    return () => {
+      map.off("moveend", updateVisible);
+      map.off("zoomend", updateVisible);
+    };
+  }, [map, poles]);
+
+  return visiblePoles.map((p) => (
+    <CircleMarker
+      key={p.pole_id}
+      center={[p.lat, p.lon]}
+      radius={p.has_device ? 4 : 2.5}
+      pathOptions={{
+        color: poleColor(p),
+        fillColor: poleColor(p),
+        fillOpacity: p.energized === false ? 1 : 0.8,
+        weight: p.energized === false ? 1.5 : 0.5,
+      }}
+    >
+      <Tooltip direction="top" opacity={0.95}>
+        <div className="font-data text-xs space-y-0.5">
+          <div className="font-semibold">{p.pole_id}</div>
+          <div>Status: <span style={{ color: poleColor(p), fontWeight: 600 }}>{poleStatusText(p)}</span></div>
+          <div className="text-slate-500">DT: {p.dt_id}</div>
+          <div className="text-slate-500">Feeder: {p.feeder_id}</div>
+          {p.last_received_at && (
+            <div className="text-slate-400">Last seen: {timeAgoShort(p.last_received_at)}</div>
+          )}
+          <div className="text-slate-400">
+            Topology: {p.topology_source === "known" ? "surveyed" : p.topology_source === "inferred" ? "inferred" : "unknown"}
+          </div>
+        </div>
+      </Tooltip>
+    </CircleMarker>
+  ));
+}
+
+/* ── Visible topology lines: only render within the current map viewport ── */
+function VisibleTopologyLines({ topologyLines }) {
+  const map = useMap();
+  const [visibleLines, setVisibleLines] = useState([]);
+
+  useEffect(() => {
+    function updateVisible() {
+      const bounds = map.getBounds();
+      const zoom = map.getZoom();
+      if (zoom < 12) {
+        setVisibleLines([]);
+        return;
+      }
+      const visible = topologyLines.filter((line) => {
+        return line.positions.some((pos) => bounds.contains(pos));
+      });
+      setVisibleLines(visible);
+    }
+    updateVisible();
+    map.on("moveend", updateVisible);
+    map.on("zoomend", updateVisible);
+    return () => {
+      map.off("moveend", updateVisible);
+      map.off("zoomend", updateVisible);
+    };
+  }, [map, topologyLines]);
+
+  return visibleLines.map((line, i) => (
+    <Polyline
+      key={`line-${i}`}
+      positions={line.positions}
+      pathOptions={{ color: line.color, weight: 1.5 }}
+    />
+  ));
+}
+
 export default function MapView({ incidents, onSelect }) {
   const [poles, setPoles] = useState([]);
   const [topologyLines, setTopologyLines] = useState([]);
@@ -371,7 +463,7 @@ export default function MapView({ incidents, onSelect }) {
     });
   }, [filteredPoles]);
 
-  /* Build topology connection lines */
+  /* Build topology connection lines — use parent_pole_id when available, fall back to nearest neighbor */
   useEffect(() => {
     if (filteredPoles.length === 0) {
       setTopologyLines([]);
@@ -380,6 +472,7 @@ export default function MapView({ incidents, onSelect }) {
 
     const byDt = {};
     for (const p of filteredPoles) {
+      if (!p.dt_id) continue;
       if (!byDt[p.dt_id]) byDt[p.dt_id] = [];
       byDt[p.dt_id].push(p);
     }
@@ -389,30 +482,39 @@ export default function MapView({ incidents, onSelect }) {
       const dtPoles = byDt[dtId];
       if (dtPoles.length < 2) continue;
 
-      const used = new Set();
-      let current = dtPoles[0];
-      used.add(current.pole_id);
+      // Build a lookup for fast access
+      const lookup = {};
+      for (const p of dtPoles) lookup[p.pole_id] = p;
 
-      for (let i = 1; i < dtPoles.length && i < 30; i++) {
-        let bestDist = Infinity;
-        let bestPole = null;
-        for (const p of dtPoles) {
-          if (used.has(p.pole_id)) continue;
-          const d = Math.hypot(p.lat - current.lat, p.lon - current.lon);
-          if (d < bestDist) {
-            bestDist = d;
-            bestPole = p;
-          }
-        }
-        if (bestPole) {
-          const bothLive = poleColor(current) === POLE_COLOR.live && poleColor(bestPole) === POLE_COLOR.live;
-          const eitherDark = poleColor(current) === POLE_COLOR.dark || poleColor(bestPole) === POLE_COLOR.dark;
+      // Try to use resolved_parent links first (much faster than nearest-neighbor)
+      let usedParentLinks = false;
+      for (const p of dtPoles) {
+        const parentId = p.resolved_parent_pole_id;
+        if (parentId && lookup[parentId]) {
+          usedParentLinks = true;
+          const parent = lookup[parentId];
+          const bothLive = poleColor(p) === POLE_COLOR.live && poleColor(parent) === POLE_COLOR.live;
+          const eitherDark = poleColor(p) === POLE_COLOR.dark || poleColor(parent) === POLE_COLOR.dark;
           connectionLines.push({
-            positions: [[current.lat, current.lon], [bestPole.lat, bestPole.lon]],
+            positions: [[p.lat, p.lon], [parent.lat, parent.lon]],
             color: eitherDark ? "rgba(220, 53, 69, 0.35)" : bothLive ? "rgba(22, 163, 122, 0.25)" : "rgba(148, 163, 184, 0.25)",
           });
-          used.add(bestPole.pole_id);
-          current = bestPole;
+        }
+      }
+
+      // Fallback: simple sequential chain if no parent links exist
+      if (!usedParentLinks) {
+        // Sort by seq_on_line if available, otherwise by pole_id
+        const sorted = [...dtPoles].sort((a, b) => (a.seq_on_line || 0) - (b.seq_on_line || 0) || a.pole_id.localeCompare(b.pole_id));
+        for (let i = 1; i < sorted.length; i++) {
+          const prev = sorted[i - 1];
+          const curr = sorted[i];
+          const bothLive = poleColor(prev) === POLE_COLOR.live && poleColor(curr) === POLE_COLOR.live;
+          const eitherDark = poleColor(prev) === POLE_COLOR.dark || poleColor(curr) === POLE_COLOR.dark;
+          connectionLines.push({
+            positions: [[prev.lat, prev.lon], [curr.lat, curr.lon]],
+            color: eitherDark ? "rgba(220, 53, 69, 0.35)" : bothLive ? "rgba(22, 163, 122, 0.25)" : "rgba(148, 163, 184, 0.25)",
+          });
         }
       }
     }
@@ -448,44 +550,11 @@ export default function MapView({ incidents, onSelect }) {
 
         <AutoFit incidents={incidents} poles={filteredPoles} />
 
-        {/* Topology connection lines */}
-        {layers.topologyLines && topologyLines.map((line, i) => (
-          <Polyline
-            key={`line-${i}`}
-            positions={line.positions}
-            pathOptions={{ color: line.color, weight: 1.5 }}
-          />
-        ))}
+        {/* Topology connection lines — viewport-culled */}
+        {layers.topologyLines && <VisibleTopologyLines topologyLines={topologyLines} />}
 
-        {/* Pole markers */}
-        {layers.poles && filteredPoles.map((p) => (
-          <CircleMarker
-            key={p.pole_id}
-            center={[p.lat, p.lon]}
-            radius={p.has_device ? 4 : 2.5}
-            pathOptions={{
-              color: poleColor(p),
-              fillColor: poleColor(p),
-              fillOpacity: p.energized === false ? 1 : 0.8,
-              weight: p.energized === false ? 1.5 : 0.5,
-            }}
-          >
-            <Tooltip direction="top" opacity={0.95}>
-              <div className="font-data text-xs space-y-0.5">
-                <div className="font-semibold">{p.pole_id}</div>
-                <div>Status: <span style={{ color: poleColor(p), fontWeight: 600 }}>{poleStatusText(p)}</span></div>
-                <div className="text-slate-500">DT: {p.dt_id}</div>
-                <div className="text-slate-500">Feeder: {p.feeder_id}</div>
-                {p.last_received_at && (
-                  <div className="text-slate-400">Last seen: {timeAgoShort(p.last_received_at)}</div>
-                )}
-                <div className="text-slate-400">
-                  Topology: {p.topology_source === "known" ? "surveyed" : p.topology_source === "inferred" ? "inferred" : "unknown"}
-                </div>
-              </div>
-            </Tooltip>
-          </CircleMarker>
-        ))}
+        {/* Pole markers — viewport-culled */}
+        {layers.poles && <VisiblePoles poles={filteredPoles} />}
 
         {/* Transformer markers */}
         {layers.transformers && dtMarkers.map((dt) => (

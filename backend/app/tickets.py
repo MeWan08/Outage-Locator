@@ -63,6 +63,8 @@ def upsert_from_candidate(db, candidate, existing: Incident | None, status="dete
 
 def suppress_scheduled(db, candidate, existing: Incident | None, schedule) -> Incident:
     inc = upsert_from_candidate(db, candidate, existing, status="suppressed_scheduled")
+    if inc.status != "suppressed_scheduled":
+        inc.status = "suppressed_scheduled"
     if inc.suppressed_by_schedule_id != schedule.id:
         inc.suppressed_by_schedule_id = schedule.id
         _log(db, inc, "system", "suppressed_scheduled",

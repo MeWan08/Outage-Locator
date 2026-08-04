@@ -26,16 +26,21 @@ import datetime as dt
 def matching_schedule(candidate, schedules, now, cfg):
     """candidate: a localization.CandidateIncident (or an object with the
     same .type/.dt_id/.feeder_id attributes). Returns the matching
-    ScheduledOutage row, or None."""
-    if candidate.type not in ("dt", "feeder"):
-        return None
+    ScheduledOutage row, or None.
+
+    Suppresses at ALL levels beneath the scheduled scope:
+    - A DT schedule suppresses dt AND span incidents on that DT.
+    - A feeder schedule suppresses feeder, dt, AND span incidents on that feeder.
+    """
     for s in schedules:
-        if candidate.type == "dt" and s.scope == "dt" and s.target_id == candidate.dt_id:
-            if is_active(s, now, cfg):
-                return s
-        if candidate.type == "feeder" and s.scope == "feeder" and s.target_id == candidate.feeder_id:
-            if is_active(s, now, cfg):
-                return s
+        if not is_active(s, now, cfg):
+            continue
+        # DT-scope schedule: suppress dt-level AND span-level incidents on this DT
+        if s.scope == "dt" and candidate.dt_id and s.target_id == candidate.dt_id:
+            return s
+        # Feeder-scope schedule: suppress feeder, dt, and span incidents on this feeder
+        if s.scope == "feeder" and candidate.feeder_id and s.target_id == candidate.feeder_id:
+            return s
     return None
 
 

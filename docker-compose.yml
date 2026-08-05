@@ -10,6 +10,7 @@ services:
       - SEED_POLE_COUNT=${SEED_POLE_COUNT:-3600}
       # Accurate Production Timers (Waits 30s to correctly group all faults)
       - HEARTBEAT_INTERVAL_SECONDS=15
+      - HEARTBEAT_JITTER_SECONDS=5
       - MISSED_HEARTBEATS_FOR_SILENCE=1
       - DEBOUNCE_SECONDS=30
       - RESTORATION_STABILITY_SECONDS=30

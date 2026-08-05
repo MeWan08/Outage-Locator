@@ -161,10 +161,17 @@ def detection_tick(db, now, cfg) -> list[str]:
 
     pole_has_device = {s.pole_id: s.has_device for s in snapshots}
     live_since_lookup = {pid: ps.became_live_at for pid, ps in pole_states.items() if ps.energized is True}
+    raw_status_lookup = {s.pole_id: s.raw_status for s in snapshots}
 
     def pole_restored(pid: str) -> bool:
         if not pole_has_device.get(pid, False):
             return True  # no device was ever fitted -- can never prove it, so don't require it
+        # A pole must be ACTIVELY heartbeating (classified LIVE by the localization
+        # engine) to count as restored. Without this check, a silent fault where
+        # no power_lost event was ever sent would leave PoleState.energized=True
+        # from the last heartbeat, causing the restoration check to pass immediately.
+        if raw_status_lookup.get(pid) != "live":
+            return False
         live_since = live_since_lookup.get(pid)
         if live_since is None:
             return False

@@ -48,6 +48,7 @@ const TABS = [
 ];
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [tab, setTab] = useState("incidents");
   const [incidents, setIncidents] = useState([]);
   const [stats, setStats] = useState(null);
@@ -57,6 +58,12 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const prevIncidentIds = useRef(new Set());
   const toastIdRef = useRef(0);
+
+  useEffect(() => {
+    // Hide splash screen completely from DOM after animation finishes (2.5s)
+    const timer = setTimeout(() => setShowSplash(false), 2600);
+    return () => clearTimeout(timer);
+  }, []);
 
   /* Toast helpers */
   const addToast = useCallback((text, tone = "success", durationMs = 4000) => {
@@ -131,9 +138,29 @@ export default function App() {
   }, []);
 
   return (
-    <ToastContext.Provider value={addToast}>
-      <div className="h-screen flex flex-col bg-panel-950">
-        {/* ── Header ── */}
+    <>
+      {/* ── Splash Screen ── */}
+      {showSplash && (
+        <div className="fixed inset-0 z-[100] bg-panel-950 flex flex-col items-center justify-center animate-splash-fade-out">
+          <div className="animate-splash-logo text-signal-copper mb-6 drop-shadow-[0_0_15px_rgba(200,122,26,0.3)]">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <div className="animate-splash-text text-center">
+            <h1 className="text-3xl font-bold text-white tracking-wider mb-3">LumenGrid</h1>
+            <p className="text-[11px] font-medium tracking-[0.3em] text-slate-400 uppercase">
+              AI-Powered Intelligence Console
+            </p>
+          </div>
+        </div>
+      )}
+
+      <ToastContext.Provider value={addToast}>
+        <div className="h-screen flex flex-col bg-panel-950">
+          {/* ── Header ── */}
         <header className="flex items-center gap-6 px-5 py-3 border-b border-panel-700 bg-white shadow-sm">
           <div className="flex items-center gap-2 pr-6 border-r border-panel-700">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-signal-copper">
@@ -227,5 +254,6 @@ export default function App() {
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </div>
     </ToastContext.Provider>
+    </>
   );
 }

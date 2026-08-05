@@ -71,6 +71,36 @@ body {
   animation: subtle-pulse 2s ease-in-out infinite;
 }
 
+/* ── Splash Screen Animations ── */
+@keyframes splash-fade-out {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; pointer-events: none; }
+}
+.animate-splash-fade-out {
+  animation: splash-fade-out 2.5s ease-in-out forwards;
+}
+
+@keyframes splash-logo {
+  0% { transform: scale(0.8) rotate(-10deg); opacity: 0; }
+  20% { transform: scale(1.1) rotate(5deg); opacity: 1; }
+  35% { transform: scale(1) rotate(0); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+.animate-splash-logo {
+  animation: splash-logo 2.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes splash-text {
+  0% { transform: translateY(15px); opacity: 0; }
+  30% { transform: translateY(15px); opacity: 0; }
+  45% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-splash-text {
+  animation: splash-text 2.5s ease-out forwards;
+}
+
 /* ── Tab content transitions ── */
 .tab-enter {
   animation: tab-fade-in 0.25s ease-out;

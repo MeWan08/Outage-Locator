@@ -83,3 +83,14 @@ When a pole stops sending heartbeats but lacks corroborating evidence (i.e., no 
 
 **Reasoning:**
 - **Transparency Over Suppression:** Suppressing uncorroborated silence would risk hiding real, localized faults simply because the affected sensor failed to transmit a final "dying gasp" signal. The most operationally responsible approach is to surface the anomaly transparently, accurately labeling its low confidence, and allowing human operators to exercise their judgment.
+## 11. Synchronizing Database State with Real-Time Classification
+When a pole misses its heartbeat window, the detection loop classifies it as `silent`. We intentionally force this real-time classification to immediately synchronize back into the database (`PoleState.energized = False`).
+
+**Reasoning:**
+- **State Consistency:** Without this synchronization, a silent pole would lack an explicit `power_lost` event, meaning the database would forever consider it "energized." This would lead to a fractured reality where the localization engine treats the pole as dark, but the map UI, API statistics, and incident restoration checkers treat it as live. By forcing the real-time classification down into the persistent store, we guarantee a single source of truth across the entire platform.
+
+## 12. Generous Heartbeat Jitter Tolerance
+We strictly configure the `MISSED_HEARTBEATS_FOR_SILENCE` threshold to be slightly wider than the maximum possible latency of the simulation/ingestion queue.
+
+**Reasoning:**
+- **Preventing UI Flapping:** If the heartbeat tolerance is perfectly tight (e.g., exactly matching the expected heartbeat interval), the slightest scheduling delay in the simulator or network will cause a healthy pole to briefly cross the "silent" threshold. The system would then mark it dark, only to instantly mark it live a second later when the delayed heartbeat arrives, causing chaotic UI flickering and false-positive incident creation. Giving the system a multi-heartbeat grace window structurally eliminates this jitter entirely.

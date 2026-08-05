@@ -41,9 +41,9 @@ flowchart LR
   boot. Both are kept so the system never conflates "the registry told us this" with
   "we guessed this from coordinates."
 - **PoleState**: the latest raw facts per pole (energized, last event, last seq,
-  `became_live_at`/`became_dark_at`). Deliberately stores no derived "is this pole
-  dark" boolean — that depends on the current time and config, and a stored boolean
-  invites staleness. Derivation is a pure function (`classify_raw`) in `localization.py`.
+  `became_live_at`/`became_dark_at`). The detection loop forces real-time classifications
+  (e.g., missed heartbeats) back into this table's `energized` column so that the UI,
+  map, and incident verifiers all act on a unified, heartbeat-aware truth.
 - **TelemetryEvent**: append-only, including duplicates and out-of-order messages
   (flagged, not dropped), so decisions are auditable after the fact.
 - **Incident**: the ticket. `identity_key` (e.g. `span:D-0112:P-024432`) is how the

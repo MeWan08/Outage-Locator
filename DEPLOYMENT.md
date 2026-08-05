@@ -40,10 +40,10 @@ All configuration is managed via environment variables. Sane defaults are provid
 | `GROQ_API_KEY` | *(Set in .env)* | Enables the AI dispatch-note feature using Llama 3.3. If unset, falls back to a deterministic string template. |
 | `DATABASE_URL` | `sqlite:////app/data/outages.db` | Swap for a PostgreSQL URL if scaling out horizontally (see ARCHITECTURE.md). |
 | `SEED_POLE_COUNT` | `3600` | Size of the synthetic network generated on first boot. |
-| `DEBOUNCE_SECONDS` | `30` | **(Set in docker-compose)** How long a candidate fault must persist across detection loops before becoming an actionable ticket. 30s allows staggered telemetry from a severe storm to arrive and consolidate into a single ticket. |
-| `RESTORATION_STABILITY_SECONDS` | `30` | **(Set in docker-compose)** How long repaired poles must stay continuously live before the system auto-verifies and closes the incident ticket. |
+| `DEBOUNCE_SECONDS` | `10` | **(Set in docker-compose)** How long a candidate fault must persist across detection loops before becoming an actionable ticket. A snappy 10s is used for the demo environment to keep things fast, while still filtering out jitter. |
+| `RESTORATION_STABILITY_SECONDS` | `15` | **(Set in docker-compose)** How long repaired poles must stay continuously live before the system auto-verifies and closes the incident ticket. |
 | `HEARTBEAT_INTERVAL_SECONDS` | `15` | **(Set in docker-compose)** Simulated device heartbeat cadence. A fast 15s interval keeps the demo UI responsive. |
-| `MISSED_HEARTBEATS_FOR_SILENCE`| `1` | **(Set in docker-compose)** How many heartbeats a sensor can miss before being marked as offline/dark. |
+| `MISSED_HEARTBEATS_FOR_SILENCE`| `2` | **(Set in docker-compose)** How many heartbeats a sensor can miss before being marked as offline/dark. Set to 2 to provide a generous grace window that absorbs any simulator scheduling delays without causing UI flicker. |
 | `SCHEDULED_OUTAGE_GRACE_SECONDS`| `2400` | Buffer (in seconds) on either side of a declared maintenance window where faults are suppressed. |
 
 ## Troubleshooting
@@ -55,7 +55,7 @@ The frontend didn't build into the image successfully. Check the `frontend-build
 This is SQLite's single-writer limitation. The batched writer in `ingestion.py` exists specifically to avoid this. If you encounter this, you are likely calling `/api/telemetry` (single insert) in a tight loop rather than using the optimized `/telemetry/batch` endpoint.
 
 **No incidents ever appear after injecting a fault.** 
-Check if the simulator actually reached a device-equipped pole (`GET /api/simulator/status`). Secondly, remember that `DEBOUNCE_SECONDS` is set to 30 seconds. A fault needs at least 30 seconds to solidify into a ticket. This is intentional to prevent ticket flapping. Wait 30 seconds before assuming it failed!
+Check if the simulator actually reached a device-equipped pole (`GET /api/simulator/status`). Secondly, remember that `DEBOUNCE_SECONDS` is set to 10 seconds. A fault needs at least 10 seconds to solidify into a ticket. This is intentional to prevent ticket flapping. Wait 10-15 seconds before assuming it failed!
 
 **Confidence is always low / topology says "inferred".** 
 This is expected by design for ~60% of transformers that lack surveyed wiring data. The system uses a Geometric MST to guess the wiring, which mathematically incurs a confidence penalty.

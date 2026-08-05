@@ -1,4 +1,4 @@
-# KSPDB Outage Locator
+# LumenGrid Outage Locator
 
 A fault-localization and ticketing system for a fictional electricity distribution
 board's LT (low-tension) network: it takes noisy pole-top telemetry, figures out

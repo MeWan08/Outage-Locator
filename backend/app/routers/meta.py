@@ -3,8 +3,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import background
+from app.config import settings
 from app.db import get_db
+from app.localization import classify_raw
 from app.models import Incident, Pole, PoleState
+from app.timeutil import utcnow
 
 router = APIRouter(prefix="/api", tags=["meta"])
 
@@ -16,6 +19,7 @@ def health():
 
 @router.get("/poles")
 def list_poles(dt_id: str | None = None, db: Session = Depends(get_db)):
+    now = utcnow()
     q = select(Pole, PoleState).outerjoin(PoleState, PoleState.pole_id == Pole.pole_id)
     if dt_id:
         q = q.where(Pole.dt_id == dt_id)
@@ -29,6 +33,12 @@ def list_poles(dt_id: str | None = None, db: Session = Depends(get_db)):
             "seq_on_line": pole.seq_on_line,
             "energized": ps.energized if ps else None,
             "last_received_at": ps.last_received_at if ps else None,
+            "raw_status": classify_raw(
+                pole.device_id is not None,
+                ps.energized if ps else None,
+                ps.last_received_at if ps else None,
+                now, settings,
+            ),
         }
         for pole, ps in rows
     ]
@@ -49,11 +59,22 @@ def get_topology(dt_id: str):
 
 @router.get("/stats")
 def stats(db: Session = Depends(get_db)):
+    now = utcnow()
     total_poles = db.execute(select(func.count(Pole.pole_id))).scalar_one()
     open_incidents = db.execute(
         select(func.count(Incident.id)).where(Incident.status.notin_(["verified", "closed", "suppressed_scheduled"]))
     ).scalar_one()
-    dark_now = db.execute(select(func.count(PoleState.pole_id)).where(PoleState.energized.is_(False))).scalar_one()
+    # Count dark poles using real-time classification (heartbeat-aware),
+    # not the stale PoleState.energized DB column which misses silent faults.
+    rows = db.execute(
+        select(Pole, PoleState).outerjoin(PoleState, PoleState.pole_id == Pole.pole_id)
+        .where(Pole.device_id.isnot(None))
+    ).all()
+    dark_now = sum(
+        1 for pole, ps in rows
+        if classify_raw(True, ps.energized if ps else None, ps.last_received_at if ps else None, now, settings)
+        in ("confirmed_dark", "silent")
+    )
     return {
         "total_poles": total_poles,
         "open_incidents": open_incidents,

@@ -142,7 +142,7 @@ export default function App() {
       {/* ── Splash Screen ── */}
       {showSplash && (
         <div className="fixed inset-0 z-[100] bg-panel-950 flex flex-col items-center justify-center animate-splash-fade-out">
-          <div className="animate-splash-logo text-signal-copper mb-6 drop-shadow-[0_0_15px_rgba(200,122,26,0.3)]">
+          <div className="animate-splash-logo text-signal-copper mb-6 drop-shadow-[0_4px_12px_rgba(200,122,26,0.25)]">
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
               <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
@@ -150,8 +150,8 @@ export default function App() {
             </svg>
           </div>
           <div className="animate-splash-text text-center">
-            <h1 className="text-3xl font-bold text-white tracking-wider mb-3">LumenGrid</h1>
-            <p className="text-[11px] font-medium tracking-[0.3em] text-slate-400 uppercase">
+            <h1 className="text-3xl font-bold text-slate-800 tracking-wider mb-3">LumenGrid</h1>
+            <p className="text-[11px] font-medium tracking-[0.3em] text-slate-500 uppercase">
               AI-Powered Intelligence Console
             </p>
           </div>

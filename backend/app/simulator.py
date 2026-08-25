@@ -211,24 +211,31 @@ async def fleet_heartbeat_loop():
     with session_scope() as db:
         poles = db.execute(select(Pole).where(Pole.device_id.isnot(None))).scalars().all()
         now = timeutil.utcnow()
+        # Spread initial heartbeats across a short window (30 s) so all
+        # poles reach LIVE quickly after startup, rather than waiting up
+        # to a full HEARTBEAT_INTERVAL which left most poles "silent".
+        initial_spread = min(30, settings.HEARTBEAT_INTERVAL_SECONDS)
         for p in poles:
-            _next_due[p.pole_id] = now + dt.timedelta(seconds=random.uniform(0, settings.HEARTBEAT_INTERVAL_SECONDS))
+            _next_due[p.pole_id] = now + dt.timedelta(seconds=random.uniform(0, initial_spread))
 
     while True:
-        now = timeutil.utcnow()
-        due = [pid for pid, when in _next_due.items() if when <= now and pid not in _faulted_pole_ids]
-        if due:
-            events = []
-            with session_scope() as db:
-                for pid in due:
-                    pole = db.get(Pole, pid)
-                    if pole is None or pole.device_id is None:
-                        continue
-                    events.append(_build_event(db, pole, "heartbeat", True, now))
-                    jitter = random.uniform(-settings.HEARTBEAT_JITTER_SECONDS, settings.HEARTBEAT_JITTER_SECONDS)
-                    _next_due[pid] = now + dt.timedelta(seconds=settings.HEARTBEAT_INTERVAL_SECONDS + jitter)
-            for ev in events:
-                await ingestion.enqueue(ev)
+        try:
+            now = timeutil.utcnow()
+            due = [pid for pid, when in _next_due.items() if when <= now and pid not in _faulted_pole_ids]
+            if due:
+                events = []
+                with session_scope() as db:
+                    for pid in due:
+                        pole = db.get(Pole, pid)
+                        if pole is None or pole.device_id is None:
+                            continue
+                        events.append(_build_event(db, pole, "heartbeat", True, now))
+                        jitter = random.uniform(-settings.HEARTBEAT_JITTER_SECONDS, settings.HEARTBEAT_JITTER_SECONDS)
+                        _next_due[pid] = now + dt.timedelta(seconds=settings.HEARTBEAT_INTERVAL_SECONDS + jitter)
+                for ev in events:
+                    await ingestion.enqueue(ev)
+        except Exception as exc:  # noqa: BLE001 — one bad tick must never kill the heartbeat loop
+            print(f"[simulator] heartbeat tick failed: {exc!r}")
         await asyncio.sleep(5)
 
 

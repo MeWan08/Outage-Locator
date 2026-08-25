@@ -143,19 +143,32 @@ class DeviceHealthFlag:
 
 
 def classify_raw(has_device: bool, energized: Optional[bool], last_received_at, now, cfg) -> str:
-    """Pole-local classification, no topology involved. See module docstring
-    of app/models.py for why 'confirmed_dark' never expires on its own."""
+    """Pole-local classification, no topology involved.
+
+    Priority order:
+    1. No device → NO_DEVICE (can never contribute evidence)
+    2. Recent heartbeat with energized=True → LIVE (freshest signal wins)
+    3. Explicit power_lost (energized=False) with no newer live heartbeat → CONFIRMED_DARK
+    4. Overdue or missing heartbeat → SILENT
+    """
     if not has_device:
         return NO_DEVICE
+    # Check freshness of last communication first — a recent heartbeat
+    # is the strongest signal and should override any stale DB state.
+    if last_received_at is not None:
+        grace = cfg.HEARTBEAT_INTERVAL_SECONDS * cfg.MISSED_HEARTBEATS_FOR_SILENCE + cfg.HEARTBEAT_JITTER_SECONDS
+        age = (now - last_received_at).total_seconds()
+        if age <= grace:
+            # We heard from this pole recently
+            if energized is False:
+                return CONFIRMED_DARK  # recent power_lost event
+            return LIVE              # recent heartbeat / power_restored
+        # Last communication is too old — fall through to stale checks
+    # Explicit power_lost that was never superseded by a heartbeat
     if energized is False:
         return CONFIRMED_DARK
-    if last_received_at is None:
-        return SILENT
-    grace = cfg.HEARTBEAT_INTERVAL_SECONDS * cfg.MISSED_HEARTBEATS_FOR_SILENCE + cfg.HEARTBEAT_JITTER_SECONDS
-    age = (now - last_received_at).total_seconds()
-    if age > grace:
-        return SILENT
-    return LIVE
+    # Never heard from, or heartbeat is overdue
+    return SILENT
 
 
 def confidence_label(score: float) -> str:

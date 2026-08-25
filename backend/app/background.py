@@ -97,25 +97,15 @@ def detection_tick(db, now, cfg) -> list[str]:
     pole_states = {ps.pole_id: ps for ps in db.execute(select(PoleState)).scalars().all()}
     snapshots = [_snapshot(p, pole_states.get(p.pole_id), now, cfg) for p in poles]
 
-    # Synchronize PoleState energized state with raw_status classification.
-    # Silent poles (missed heartbeats) must be marked energized=False so the DB,
-    # map, stats API, and restoration tracker all consistently recognize them as dark.
-    for s in snapshots:
-        if not s.has_device:
-            continue
-        ps = pole_states.get(s.pole_id)
-        if ps is None:
-            continue
-        if s.raw_status in ("silent", "confirmed_dark"):
-            if ps.energized is not False:
-                ps.energized = False
-                ps.became_dark_at = now
-                db.add(ps)
-        elif s.raw_status == "live":
-            if ps.energized is not True:
-                ps.energized = True
-                ps.became_live_at = now
-                db.add(ps)
+    # NOTE: We intentionally do NOT write energized=False into PoleState for
+    # "silent" poles here.  classify_raw() already handles real-time
+    # classification via heartbeat timestamps — writing the derived boolean
+    # back into the DB created a self-reinforcing feedback loop: once
+    # energized=False was stored, the next tick's classify_raw returned
+    # CONFIRMED_DARK (checking energized before timestamps), locking the
+    # pole dark until a fresh heartbeat arrived.  Ingestion.py remains the
+    # sole writer of PoleState.energized, keeping it grounded in actual
+    # telemetry events (heartbeat → True, power_lost → False).
 
     candidates, _health_flags = run_localization(snapshots, _dt_topologies, _feeder_dt_ids, now, cfg)
 

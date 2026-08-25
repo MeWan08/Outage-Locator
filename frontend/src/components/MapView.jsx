@@ -13,8 +13,15 @@ const POLE_COLOR = {
 
 const DT_COLOR = "#6d28d9"; // purple for transformers — distinct from poles
 
+/* Use the backend-computed raw_status (which checks heartbeat freshness)
+   rather than the stale DB energized boolean. */
 function poleColor(p) {
   if (!p.has_device) return POLE_COLOR.noDevice;
+  const status = p.raw_status;
+  if (status === "live") return POLE_COLOR.live;
+  if (status === "confirmed_dark") return POLE_COLOR.dark;
+  if (status === "silent") return POLE_COLOR.dark;
+  // fallback for backward compat
   if (p.energized === true) return POLE_COLOR.live;
   if (p.energized === false) return POLE_COLOR.dark;
   return POLE_COLOR.unknown;
@@ -22,6 +29,11 @@ function poleColor(p) {
 
 function poleStatusText(p) {
   if (!p.has_device) return "no device";
+  const status = p.raw_status;
+  if (status === "confirmed_dark") return "dark";
+  if (status === "silent") return "silent";
+  if (status === "live") return "live";
+  // fallback
   if (p.energized === false) return "dark";
   if (p.energized === true) return "live";
   return "unknown";
@@ -347,8 +359,8 @@ function VisiblePoles({ poles }) {
       pathOptions={{
         color: poleColor(p),
         fillColor: poleColor(p),
-        fillOpacity: p.energized === false ? 1 : 0.8,
-        weight: p.energized === false ? 1.5 : 0.5,
+        fillOpacity: (p.raw_status === "confirmed_dark" || p.raw_status === "silent") ? 1 : 0.8,
+        weight: (p.raw_status === "confirmed_dark" || p.raw_status === "silent") ? 1.5 : 0.5,
       }}
     >
       <Tooltip direction="top" opacity={0.95}>
@@ -429,8 +441,12 @@ export default function MapView({ incidents, onSelect }) {
   useEffect(() => {
     let alive = true;
     async function load() {
-      const rows = await api.poles();
-      if (alive) setPoles(rows);
+      try {
+        const rows = await api.poles();
+        if (alive) setPoles(rows);
+      } catch (err) {
+        console.warn("[MapView] failed to load poles:", err);
+      }
     }
     load();
     const t = setInterval(load, 15000);
@@ -449,7 +465,7 @@ export default function MapView({ incidents, onSelect }) {
       result = result.filter((p) => p.feeder_id === selectedFeeder);
     }
     if (layers.offlineOnly) {
-      result = result.filter((p) => p.energized === false || !p.has_device);
+      result = result.filter((p) => p.raw_status === "confirmed_dark" || p.raw_status === "silent" || !p.has_device);
     }
     return result;
   }, [poles, selectedFeeder, layers.offlineOnly]);
